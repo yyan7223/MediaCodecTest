@@ -23,6 +23,7 @@ import android.widget.TextView;
 
 import java.io.IOException;
 import java.util.Random;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class TextureRendererPlugIn implements SurfaceTexture.OnFrameAvailableListener {
     private static TextureRendererPlugIn _instance;
@@ -52,6 +53,8 @@ public class TextureRendererPlugIn implements SurfaceTexture.OnFrameAvailableLis
     private Random rnd;
     Handler hnd;
 
+    public static ConcurrentLinkedQueue<byte[]> h264FrameQueue = new ConcurrentLinkedQueue<byte[]>();
+
     public int glCreateExternalTexture() {
         Log.d(TAG, "glCreateExternalTexture() called");
         int[] texId = new int[1];
@@ -76,7 +79,9 @@ public class TextureRendererPlugIn implements SurfaceTexture.OnFrameAvailableLis
 
         initSurface();
 
-        startAsyncPlayback(); // Test decoding
+//        startAsyncUrlPlayback(); // Test URL decoding
+//        startAsyncH264Decoding(); // Test H264 byte stream decoding
+        initSyncH264Decoder(); // init synchronized H264 decoder
 
         // Test drawing circles
 //        rec = new Rect(0,0,width,height);
@@ -161,7 +166,7 @@ public class TextureRendererPlugIn implements SurfaceTexture.OnFrameAvailableLis
         mNewFrameAvailable = true;
     }
 
-    public void startAsyncPlayback() {
+    public void startAsyncUrlPlayback() {
 
         try {
 
@@ -195,5 +200,32 @@ public class TextureRendererPlugIn implements SurfaceTexture.OnFrameAvailableLis
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+    // https://blog.csdn.net/DTTYYY/article/details/105851081
+    public void startAsyncH264Decoding(){
+        String mimeType = "video/avc";
+        MediaFormat mFormat = MediaFormat.createVideoFormat(mimeType, mTextureWidth, mTextureHeight);
+        mAsyncDecoder = new AsyncDecoder(mFormat, mSurface);
+        mAsyncDecoder.startDecoder();
+    }
+
+    public void initSyncH264Decoder(){
+        String mimeType = "video/avc";
+        MediaFormat mFormat = MediaFormat.createVideoFormat(mimeType, mTextureWidth, mTextureHeight);
+        mSyncDecoder = new SyncDecoder(mFormat, mSurface);
+        mSyncDecoder.startDecoder();
+    }
+
+    // 原文链接：https://blog.csdn.net/qjh5606/article/details/85298981
+    public void queueH264FrameData(byte[] frame)
+    {
+        Log.i("Unity", "H264 frame []: " + frame + " and length: " + frame.length);
+        h264FrameQueue.add(frame);
+//        Log.i("Unity", h264FrameQueue.size() + " H264 frames are queued");
+
+        // if using Synchronized decoder, one should perform decoding every time after Unity pass the H264 data to java
+        mSyncDecoder.writeSample();
+        mSyncDecoder.popSample();
     }
 }

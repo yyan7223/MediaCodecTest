@@ -22,25 +22,39 @@ public class AsyncDecoder {
 
     private Handler mAsyncDecoderHandler;
     private HandlerThread mAsyncDecoderHandlerThread = new HandlerThread("AsyncDecoder");
+    private boolean decodeURL = false;
+    private int mCount = 0;
+    private final static int TIME_INTERNAL = 30;
 
     private MediaCodec.Callback mCallback = new MediaCodec.Callback() {
         @Override
         public void onInputBufferAvailable(MediaCodec mediaCodec, int id) {
-//            Log.d(TAG, "Has inputed one frame");
+            Log.d(TAG, "Has inputed one frame");
             ByteBuffer inputBuffer = mediaCodec.getInputBuffer(id);
             inputBuffer.clear();
 
-            int size = mMediaExtractor.readSampleData(inputBuffer, 0);
-            if (size <= 0) {
-                stopDecoder();
-                release();
+            if (decodeURL) {
+                int size = mMediaExtractor.readSampleData(inputBuffer, 0);
+                Log.d(TAG, "Size is: "+size);
+                if (size <= 0) {
+                    stopDecoder();
+                    release();
+                }
+                int flags = mMediaExtractor.getSampleFlags();
+                long presentationTimeUs = mMediaExtractor.getSampleTime();
+                mMediaExtractor.advance();
+                mediaCodec.queueInputBuffer(id,0, size, presentationTimeUs, flags);
             }
-
-            int flags = mMediaExtractor.getSampleFlags();
-            long presentationTimeUs = mMediaExtractor.getSampleTime();
-            mMediaExtractor.advance();
-
-            mediaCodec.queueInputBuffer(id,0, size, presentationTimeUs, flags);
+            else if (!TextureRendererPlugIn.h264FrameQueue.isEmpty()){
+                byte[] h264Frame = TextureRendererPlugIn.h264FrameQueue.poll();
+                Log.d(TAG, "byte[] Size is: " + h264Frame.length);
+                inputBuffer.put(h264Frame);
+                mediaCodec.queueInputBuffer(id,0, h264Frame.length, mCount * TIME_INTERNAL, 0);
+                mCount++;
+            }
+            else{
+                Log.d(TAG, "Not available ");
+            }
         }
 
         @Override
@@ -66,10 +80,25 @@ public class AsyncDecoder {
         }
     };
 
+    // decode local video or online video, requires mExtractor
     public AsyncDecoder(MediaExtractor mExtractor, MediaFormat mFormat, Surface surface){
         try {
             mMediaCodec = MediaCodec.createDecoderByType(mFormat.getString(MediaFormat.KEY_MIME));
             mMediaExtractor = mExtractor;
+            mMediaFormat = mFormat;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        mSurface = surface;
+        mAsyncDecoderHandlerThread.start();
+        mAsyncDecoderHandler = new Handler(mAsyncDecoderHandlerThread.getLooper());
+        decodeURL = true;
+    }
+
+    // directly decode H264 byte stream
+    public AsyncDecoder(MediaFormat mFormat, Surface surface){
+        try {
+            mMediaCodec = MediaCodec.createDecoderByType(mFormat.getString(MediaFormat.KEY_MIME));
             mMediaFormat = mFormat;
         } catch (IOException e) {
             e.printStackTrace();

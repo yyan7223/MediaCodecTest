@@ -5,6 +5,7 @@ import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.util.Log;
 import android.view.Surface;
 
 import java.io.IOException;
@@ -16,12 +17,26 @@ public class SyncDecoder {
     private MediaFormat mMediaFormat;
     private MediaExtractor mMediaExtractor;
     private Surface mSurface;
+    private boolean decodeURL = false;
+    private int mCount = 0;
+    private final static int TIME_INTERNAL = 30;
 
 
     public SyncDecoder(MediaExtractor mExtractor, MediaFormat mFormat, Surface surface){
         try {
             mMediaCodec = MediaCodec.createDecoderByType(mFormat.getString(MediaFormat.KEY_MIME));
             mMediaExtractor = mExtractor;
+            mMediaFormat = mFormat;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        mSurface = surface;
+        decodeURL = true;
+    }
+
+    public SyncDecoder(MediaFormat mFormat, Surface surface){
+        try {
+            mMediaCodec = MediaCodec.createDecoderByType(mFormat.getString(MediaFormat.KEY_MIME));
             mMediaFormat = mFormat;
         } catch (IOException e) {
             e.printStackTrace();
@@ -59,17 +74,30 @@ public class SyncDecoder {
         ByteBuffer inputBuffer = mMediaCodec.getInputBuffer(inputBufferId);
         inputBuffer.clear();
 
-        int size = mMediaExtractor.readSampleData(inputBuffer, 0);
-        if (size <= 0) {
-            stopDecoder();
-            release();
+        if (decodeURL){
+            int size = mMediaExtractor.readSampleData(inputBuffer, 0);
+            if (size <= 0) {
+                stopDecoder();
+                release();
+            }
+
+            int flags = mMediaExtractor.getSampleFlags();
+            long presentationTimeUs = mMediaExtractor.getSampleTime();
+            mMediaExtractor.advance();
+            mMediaCodec.queueInputBuffer(inputBufferId, 0, size, presentationTimeUs, flags);
         }
-
-        int flags = mMediaExtractor.getSampleFlags();
-        long presentationTimeUs = mMediaExtractor.getSampleTime();
-        mMediaExtractor.advance();
-
-        mMediaCodec.queueInputBuffer(inputBufferId, 0, size, presentationTimeUs, flags);
+        else{
+            byte[] h264Frame = TextureRendererPlugIn.h264FrameQueue.poll();
+            Log.d(TAG, "Dequeued Byte[] size is: " + h264Frame.length);
+            inputBuffer.put(h264Frame);
+            try{
+                mMediaCodec.queueInputBuffer(inputBufferId, 0, h264Frame.length, mCount * TIME_INTERNAL, 0);
+                Log.d(TAG, "queueInputBuffer success");
+            } catch (MediaCodec.CodecException e){
+                Log.e(TAG, "queueInputBuffer failed");
+            }
+            mCount++;
+        }
     }
 
     public void popSample(){
@@ -82,7 +110,12 @@ public class SyncDecoder {
                 byte [] buffer = new byte[outputBuffer.remaining()];
                 outputBuffer.get(buffer);
             }
-            mMediaCodec.releaseOutputBuffer(outputBufferId, true);
+            try{
+                mMediaCodec.releaseOutputBuffer(outputBufferId, true);
+                Log.d(TAG, "releaseOutputBuffer success");
+            } catch (MediaCodec.CodecException e){
+                Log.e(TAG, "releaseOutputBuffer failed");
+            }
         }
     }
 

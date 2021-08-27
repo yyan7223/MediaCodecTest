@@ -80,8 +80,8 @@ public class MainActivity extends Activity {
     public boolean onOptionsItemSelected(MenuItem item) {
         if (item.getItemId() == R.id.menu_play) {
             mAttribView.setVisibility(View.VISIBLE);
-            startAsyncPlayback();
-//            startSyncPlayback();
+//            startAsyncPlayback();
+            startSyncPlayback();
             item.setEnabled(false);
         }
         return true;
@@ -138,7 +138,8 @@ public class MainActivity extends Activity {
         try {
 
             // BEGIN_INCLUDE(initialize_extractor)
-            mExtractor.setDataSource(this, videoUri, null);
+//            mExtractor.setDataSource(this, videoUri, null);
+            mExtractor.setDataSource("https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4");
             int nTracks = mExtractor.getTrackCount();
 
             // Begin by unselecting all of the tracks in the extractor, so we won't see
